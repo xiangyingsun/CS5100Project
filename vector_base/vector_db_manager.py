@@ -3,22 +3,27 @@ import chromadb
 from sentence_transformers import SentenceTransformer
 from typing import List, Dict, Any
 import logging
+from chromadb.utils.embedding_functions import EmbeddingFunction
+
+class SentenceTransformerEmbedding(EmbeddingFunction):
+    def __init__(self, model_name: str = 'all-mpnet-base-v2'):
+        self.embedder = SentenceTransformer(model_name)
+        
+    def __call__(self, input: List[str]) -> List[List[float]]:
+        """Convert texts to embeddings using sentence-transformers"""
+        return self.embedder.encode(input, normalize_embeddings=True).tolist()
 
 class YogaVectorDB:
     def __init__(self, collection_name: str = "yoga_poses", persist_dir: str = "./yoga_db"):
         self.client = chromadb.PersistentClient(path=persist_dir)
-        self.embedder = SentenceTransformer('all-mpnet-base-v2')
+        self.embedding_function = SentenceTransformerEmbedding()
         
         self.collection = self.client.get_or_create_collection(
             name=collection_name,
             metadata={"hnsw:space": "cosine"},
-            embedding_function=self._embedding_fn
+            embedding_function=self.embedding_function
         )
         
-    def _embedding_fn(self, texts: List[str]) -> List[List[float]]:
-        """Convert texts to embeddings using sentence-transformers"""
-        return self.embedder.encode(texts, normalize_embeddings=True).tolist()
-    
     def populate_db(self, documents: List[str], metadatas: List[Dict], ids: List[str]):
         """Batch insert yoga poses into ChromaDB"""
         try:
@@ -40,12 +45,12 @@ class YogaVectorDB:
         max_results: int = 5
     ) -> Dict[str, Any]:
         """Search poses with metadata filtering"""
-        filters = {}
+        where_filter = None
         if level:
-            filters["Level"] = level
+            where_filter = {"Level": {"$eq": level}}
             
         return self.collection.query(
             query_texts=[query_text],
             n_results=max_results,
-            where=filters
+            where=where_filter
         )

@@ -2,7 +2,7 @@
 import argparse
 from typing import List, Dict
 import json
-from .db import YogaVectorDB  # From previous implementation
+from vector_db_manager import YogaVectorDB  # Changed from .db
 from tabulate import tabulate
 import warnings
 
@@ -20,8 +20,8 @@ class YogaCLI:
         """Filter poses based on health contraindications"""
         safe_poses = []
         for pose in poses:
-            contraindications = pose['metadata']['Contraindications'].lower()
-            if any(c.lower() in contraindications for c in conditions):
+            contraindications = pose['metadata'].get('Contraindications', '').lower()
+            if contraindications and any(c.lower() in contraindications for c in conditions):
                 continue
             safe_poses.append(pose)
         return safe_poses
@@ -46,12 +46,15 @@ class YogaCLI:
         )
         
         # Process results
-        poses = [{
-            'pose': r['document'].split('\n')[0].replace('Pose Name: ', ''),
-            'duration': '3-5 mins' if 'Breathing' in r['document'] else '1-2 mins',
-            'metadata': r['metadata'],
-            'instructions': '\n'.join(r['document'].split('\n')[1:])
-        } for r in raw_results['metadatas'][0]]
+        poses = []
+        for doc, meta in zip(raw_results['documents'][0], raw_results['metadatas'][0]):
+            poses.append({
+                'pose': doc.split('\n')[0].replace('Pose Name: ', ''),
+                'duration': '3-5 mins' if 'Breathing' in doc else '1-2 mins',
+                'metadata': meta,
+                'document': doc,
+                'instructions': '\n'.join(doc.split('\n')[1:])
+            })
 
         # Safety filtering
         safe_poses = self._filter_contraindications(poses, conditions)
@@ -81,12 +84,13 @@ class YogaCLI:
 
     def _categorize_pose(self, pose: Dict) -> str:
         """Categorize pose by type"""
-        desc = pose['metadata']['Description'].lower()
-        if 'standing' in desc:
+        document = pose['document'].lower()
+        
+        if 'standing' in document:
             return 'standing'
-        if 'seated' in desc or 'sit' in desc:
+        if 'seated' in document or 'sit' in document:
             return 'seated'
-        if 'balance' in desc:
+        if 'balance' in document:
             return 'balance'
         return 'general'
 
